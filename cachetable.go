@@ -24,18 +24,25 @@ type CacheTable struct {
 	items map[interface{}]*CacheItem
 
 	// Timer responsible for triggering cleanup.
+	// 对数据项进行删除的定时器，定时器触发后，会扫描数据项，对过期的数据进行删除
+	// 清理过期数据最简单的方法就是为每一个数据项都开一个定时器去处理，但是这样过于消耗性能，cache2go只用一个定时器来维护。
+	// 当触发cleanupTimer时，遍历数据进行清理
 	cleanupTimer *time.Timer
 	// Current timer duration.
+	// 定时器触发的时间，（此项不由用户定义，是由代码自动进行更新）
 	cleanupInterval time.Duration
 
 	// The logger used for this table.
 	logger *log.Logger
 
 	// Callback method triggered when trying to load a non-existing key.
+	// 当访问了一个不存在的函数此函数会进行调用，通常为更新缓存，即查询数据库将结果加入缓存
 	loadData func(key interface{}, args ...interface{}) *CacheItem
 	// Callback method triggered when adding a new item to the cache.
+	// 当增加一个对象会调用此列表里的方法
 	addedItem []func(item *CacheItem)
 	// Callback method triggered before deleting an item from the cache.
+	// 当删除一个对象会调用此列表里的方法
 	aboutToDeleteItem []func(item *CacheItem)
 }
 
@@ -123,6 +130,11 @@ func (table *CacheTable) SetLogger(logger *log.Logger) {
 }
 
 // Expiration check loop, triggered by a self-adjusting timer.
+// 在expirationCheck方法中，每次调用此方法都会遍历一遍对象，检查其是否过期并确定下次检查的时间。
+// 在expirationCheck中，先是停止其定时器（因为可能有部分代码主动调用此方法，不是有定时器自动调用，为防止触发错误，故先停止定时器）
+// 然后遍历数据项，通过now.Sub(accessedOn) >= lifeSpan来判断是否要删除数据;
+// 并记录下smallestDuration最小触发时间，即距离现在最进的要进行删除的数据的删除时间;
+// 最后设置定时器在smallestDuration 秒后再次触发此函数进行数据更新。
 func (table *CacheTable) expirationCheck() {
 	table.Lock()
 	if table.cleanupTimer != nil {
@@ -172,6 +184,8 @@ func (table *CacheTable) expirationCheck() {
 func (table *CacheTable) addInternal(item *CacheItem) {
 	// Careful: do not run this method unless the table-mutex is locked!
 	// It will unlock it for the caller before running the callbacks and checks
+	// 小心：不要在没有给table加锁的情况下调用这个方法
+	// 将在增加数据之后，执行回调函数和expirationCheck之前，对table解锁
 	table.log("Adding item with key", item.key, "and lifespan of", item.lifeSpan, "to table", table.name)
 	table.items[item.key] = item
 

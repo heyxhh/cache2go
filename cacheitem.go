@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// CacheItem is an individual cache item
+// CacheItem is an individual cache item; CacheItem是一个原子缓存数据，存于CacheTable中
 // Parameter data contains the user-set value in the cache.
 type CacheItem struct {
 	sync.RWMutex
@@ -28,7 +28,7 @@ type CacheItem struct {
 	createdOn time.Time
 	// Last access timestamp.
 	accessedOn time.Time
-	// How often the item was accessed.
+	// How often the item was accessed; 被访问的次数
 	accessCount int64
 
 	// Callback method triggered right before removing the item from the cache
@@ -54,6 +54,8 @@ func NewCacheItem(key interface{}, lifeSpan time.Duration, data interface{}) *Ca
 }
 
 // KeepAlive marks an item to be kept for another expireDuration period.
+// 刷新数据项状态，通过改变accessedOn延迟过期时间(是否过期是通过 当前时间-accessedOn>lifeSpan 来进行判断的)
+// 并增加其访问次数
 func (item *CacheItem) KeepAlive() {
 	item.Lock()
 	defer item.Unlock()
@@ -101,6 +103,7 @@ func (item *CacheItem) Data() interface{} {
 
 // SetAboutToExpireCallback configures a callback, which will be called right
 // before the item is about to be removed from the cache.
+// 设置删除该数据时触发的方法，如果有方法存在，会清空之前的方法
 func (item *CacheItem) SetAboutToExpireCallback(f func(interface{})) {
 	if len(item.aboutToExpire) > 0 {
 		item.RemoveAboutToExpireCallback()
@@ -111,6 +114,7 @@ func (item *CacheItem) SetAboutToExpireCallback(f func(interface{})) {
 }
 
 // AddAboutToExpireCallback appends a new callback to the AboutToExpire queue
+// 增加删除该数据时触发的方法
 func (item *CacheItem) AddAboutToExpireCallback(f func(interface{})) {
 	item.Lock()
 	defer item.Unlock()
@@ -118,6 +122,7 @@ func (item *CacheItem) AddAboutToExpireCallback(f func(interface{})) {
 }
 
 // RemoveAboutToExpireCallback empties the about to expire callback queue
+// 清除其回调函数
 func (item *CacheItem) RemoveAboutToExpireCallback() {
 	item.Lock()
 	defer item.Unlock()
